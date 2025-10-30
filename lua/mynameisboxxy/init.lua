@@ -12,30 +12,33 @@ M.opts = {
 
 -- reselect last visual and return normalized lines
 local function get_visual_selection()
-	-- refresh visual marks (safe in normal)
-	pcall(vim.cmd, "normal! gv")
+	-- only reselect last visual if we're NOT currently in visual
+	local mode = vim.fn.mode()
+	if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+		pcall(vim.cmd, "normal! gv")
+	end
 
 	local s = vim.fn.getpos("'<")[2]
 	local e = vim.fn.getpos("'>")[2]
 
-	-- normalize
+	-- no valid selection? abort
+	if not s or not e or s == 0 or e == 0 then
+		return nil, nil, nil
+	end
+
+	-- normalize (bottom→top)
 	if s > e then
 		s, e = e, s
 	end
 
+	-- clamp just in case
+	local maxline = vim.api.nvim_buf_line_count(0)
+	if e > maxline then
+		e = maxline
+	end
+
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	return s, e, lines
-end
-
-local function longestLine(lines)
-	local m = 0
-	for _, line in ipairs(lines) do
-		local w = vim.fn.strdisplaywidth(line)
-		if w > m then
-			m = w
-		end
-	end
-	return m
 end
 
 -- expand tabs to spaces so box alignment is correct
@@ -119,9 +122,11 @@ end
 -- base runner
 function M.run(override)
 	local s, e, lines = get_visual_selection()
-	local opts = vim.tbl_deep_extend("force", M.opts, override or {})
+	if not s or not e or not lines then
+		return
+	end
 
-	-- pick border from opts
+	local opts = vim.tbl_deep_extend("force", M.opts, override or {})
 	local b = opts.border or {}
 	local c = b.corners or {}
 	local tl = c.tl or b.corner
@@ -134,8 +139,10 @@ function M.run(override)
 
 	local bordered = add_border_custom(lines, tl, tr, bl, br, horizontal, vertical, padding)
 
-	-- replace selection
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
+
+	-- leave visual mode so the cursor feels right
+	vim.cmd("normal! \\<Esc>")
 end
 
 -- run a named style from opts.styles
