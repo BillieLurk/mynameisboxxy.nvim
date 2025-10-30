@@ -10,7 +10,7 @@ M.opts = {
 	styles = {},
 }
 
--- find display width of the widest line (handles tabs, wide chars)
+-- widest display width starting at column `startcol` (handles tabs/wide chars)
 local function longest_line(lines, startcol)
 	local m = 0
 	for _, line in ipairs(lines) do
@@ -22,105 +22,71 @@ local function longest_line(lines, startcol)
 	return m
 end
 
--- produce a bordered block of lines
-local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
-	local px = padding and padding[1] or 0
-	local py = padding and padding[2] or 0
+-- build bordered block
+local function add_border(lines, border)
+	local c = (border.corners or {})
+	local tl = c.tl or border.corner
+	local tr = c.tr
+	local bl = c.bl
+	local br = c.br
+	local h = border.horizontal or "-"
+	local v = border.vertical or "|"
+	local px = (border.padding and border.padding[1]) or 0
+	local py = (border.padding and border.padding[2]) or 0
 
+	-- single-corner shorthand
 	if tl and (not tr and not bl and not br) then
 		tr, bl, br = tl, tl, tl
 	end
 
-	-- start column after the left border + left padding
+	-- width calc must start after left border + left padding for correct tab expansion
 	local startcol = 1 + px
-
-	-- compute widths with the correct starting column to account for tabs
 	local max_len = longest_line(lines, startcol)
 
-	local b_width = max_len + px * 2 + 2
-	local inner_w = b_width - 2
-
-	local top_border = (tl or "+") .. string.rep(h or "-", inner_w) .. (tr or "+")
-	local bottom_border = (bl or "+") .. string.rep(h or "-", inner_w) .. (br or "+")
-	local empty_border = (v or "|") .. string.rep(" ", inner_w) .. (v or "|")
+	local inner_w = max_len + px * 2
+	local top_border = (tl or "+") .. string.rep(h, inner_w) .. (tr or "+")
+	local bottom_border = (bl or "+") .. string.rep(h, inner_w) .. (br or "+")
+	local empty_border = v .. string.rep(" ", inner_w) .. v
 
 	local out = { top_border }
-
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
 
 	for _, line in ipairs(lines) do
-		-- width from the same start column so tab expansion matches actual layout
 		local line_w = vim.fn.strdisplaywidth(line, startcol)
-		local right_pad = px + (max_len - line_w)
+		local right_px = px + (max_len - line_w)
 		out[#out + 1] = table.concat({
-			(v or "|"),
+			v,
 			string.rep(" ", px),
 			line,
-			string.rep(" ", right_pad),
-			(v or "|"),
+			string.rep(" ", right_px),
+			v,
 		})
 	end
 
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
-
 	out[#out + 1] = bottom_border
 	return out
 end
 
--- core: operate on a concrete line range [s, e] (1-based, inclusive)
+-- operate on a concrete range [s, e] (1-based inclusive)
 function M.run_range(s, e, override)
 	if s > e then
 		s, e = e, s
 	end
-
 	local opts = vim.tbl_deep_extend("force", M.opts, override or {})
-	local b = opts.border or {}
-	local c = b.corners or {}
-	local tl = c.tl or b.corner
-	local tr = c.tr
-	local bl = c.bl
-	local br = c.br
-	local horizontal = b.horizontal
-	local vertical = b.vertical
-	local padding = b.padding or { 1, 1 }
+	local border = opts.border or {}
 
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
-	local bordered = add_border_custom(lines, tl, tr, bl, br, horizontal, vertical, padding)
-
-	-- replace selection with bordered block
+	local bordered = add_border(lines, border)
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
 end
 
--- programmatic: use visual marks if you really want (not used by the keymaps below)
-function M.run(override)
-	local s = vim.fn.getpos("'<")[2]
-	local e = vim.fn.getpos("'>")[2]
-	if s == 0 or e == 0 then
-		local cur = vim.api.nvim_win_get_cursor(0)[1]
-		s, e = cur, cur
-	end
-	if s > e then
-		s, e = e, s
-	end
-	return M.run_range(s, e, override)
-end
-
--- convenience: run by style name found in opts.styles
-function M.run_style(name)
-	local style_opts = (M.opts.styles or {})[name]
-	if not style_opts then
-		return M.run() -- fallback to default
-	end
-	return M.run(style_opts)
-end
-
--- create the range-aware :BoxxyBorder [style] command
+-- :BoxxyBorder [style]
 local function define_user_command()
-	-- avoid redefining across reloads
 	if vim.g._boxxy_cmd_defined then
 		return
 	end
@@ -129,14 +95,14 @@ local function define_user_command()
 	vim.api.nvim_create_user_command("BoxxyBorder", function(cmd)
 		local s, e = cmd.line1, cmd.line2
 		local style_name = cmd.args ~= "" and cmd.args or "default"
-		local style_opts = (M.opts.styles or {})[style_name] or (style_name == "default" and {} or nil)
+		local style_opts = (M.opts.styles or {})[style_name]
 
-		if style_opts == nil then
+		if style_opts == nil and style_name ~= "default" then
 			vim.notify(("BoxxyBorder: unknown style '%s'"):format(style_name), vim.log.levels.WARN)
 			style_opts = {}
 		end
 
-		M.run_range(s, e, style_opts)
+		M.run_range(s, e, style_opts or {})
 	end, {
 		range = true,
 		nargs = "?",
