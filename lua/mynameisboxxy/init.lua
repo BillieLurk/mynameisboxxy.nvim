@@ -13,6 +13,12 @@ M.opts = {
 local function get_visual_selection()
 	local s = vim.fn.getpos("'<")[2]
 	local e = vim.fn.getpos("'>")[2]
+
+	-- normalize
+	if s > e then
+		s, e = e, s
+	end
+
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
 	return s, e, lines
 end
@@ -46,6 +52,7 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
+
 	for _, line in ipairs(lines) do
 		local line_w = vim.fn.strdisplaywidth(line)
 		local right_pad = px + (max_len - line_w)
@@ -57,9 +64,11 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 			v,
 		})
 	end
+
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
+
 	out[#out + 1] = bottom_border
 	return out
 end
@@ -67,13 +76,11 @@ end
 function M.setup(user_opts)
 	M.opts = vim.tbl_deep_extend("force", M.opts, user_opts or {})
 end
-
 -- base runner
 function M.run(override)
 	local s, e, lines = get_visual_selection()
 	local opts = vim.tbl_deep_extend("force", M.opts, override or {})
 
-	-- pick border from opts
 	local b = opts.border or {}
 	local c = b.corners or {}
 	local tl = c.tl or b.corner
@@ -85,14 +92,13 @@ function M.run(override)
 	local padding = b.padding or { 1, 1 }
 
 	local bordered = add_border_custom(lines, tl, tr, bl, br, horizontal, vertical, padding)
+
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
 end
 
--- run a named style from opts.styles
 function M.run_style(name)
 	local style = (M.opts.styles or {})[name]
 	if not style then
-		-- fallback to default
 		return M.run()
 	end
 	return M.run(style)
