@@ -10,37 +10,17 @@ M.opts = {
 	styles = {},
 }
 
--- get current buffer line count (for clamping)
-local function get_buf_line_count()
-	return vim.api.nvim_buf_line_count(0)
-end
-
--- get visual selection, robust
+-- reselect last visual and return normalized lines
 local function get_visual_selection()
-	local mode = vim.fn.mode()
-
-	-- if we're NOT in visual now, try to reselect the last visual
-	if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
-		pcall(vim.cmd, "normal! gv")
-	end
+	-- refresh visual marks (safe in normal)
+	pcall(vim.cmd, "normal! gv")
 
 	local s = vim.fn.getpos("'<")[2]
 	local e = vim.fn.getpos("'>")[2]
 
-	-- if still nothing, bail
-	if s == 0 or e == 0 then
-		return nil, nil, nil
-	end
-
 	-- normalize
 	if s > e then
 		s, e = e, s
-	end
-
-	-- clamp to buffer line count
-	local maxline = get_buf_line_count()
-	if e > maxline then
-		e = maxline
 	end
 
 	local lines = vim.api.nvim_buf_get_lines(0, s - 1, e, false)
@@ -58,6 +38,7 @@ local function longestLine(lines)
 	return m
 end
 
+-- expand tabs to spaces so box alignment is correct
 local function expand_tabs(line, start_col, ts)
 	local out, col = {}, start_col
 	local n = vim.fn.strchars(line)
@@ -84,13 +65,16 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 		tr, bl, br = tl, tl, tl
 	end
 
+	-- content starts after: left border (1) + left padding (px)
 	local content_start_col = 1 + px
 
+	-- expand all lines for correct measuring
 	local expanded = {}
 	for i, line in ipairs(lines) do
 		expanded[i] = expand_tabs(line, content_start_col, ts)
 	end
 
+	-- now find longest expanded line
 	local max_len = longestLine(expanded)
 	local b_width = max_len + px * 2 + 2
 	local inner_w = b_width - 2
@@ -101,10 +85,12 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 
 	local out = { top_border }
 
+	-- top padding
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
 
+	-- content
 	for _, line in ipairs(expanded) do
 		local line_w = vim.fn.strdisplaywidth(line)
 		local right_pad = px + (max_len - line_w)
@@ -117,6 +103,7 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 		})
 	end
 
+	-- bottom padding
 	for _ = 1, py do
 		out[#out + 1] = empty_border
 	end
@@ -129,13 +116,12 @@ function M.setup(user_opts)
 	M.opts = vim.tbl_deep_extend("force", M.opts, user_opts or {})
 end
 
+-- base runner
 function M.run(override)
 	local s, e, lines = get_visual_selection()
-	if not s or not e or not lines then
-		return
-	end
-
 	local opts = vim.tbl_deep_extend("force", M.opts, override or {})
+
+	-- pick border from opts
 	local b = opts.border or {}
 	local c = b.corners or {}
 	local tl = c.tl or b.corner
@@ -148,13 +134,14 @@ function M.run(override)
 
 	local bordered = add_border_custom(lines, tl, tr, bl, br, horizontal, vertical, padding)
 
-	-- write back (s,e are normalized and clamped)
+	-- replace selection
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
 
-	-- exit visual
+	-- leave visual mode
 	vim.cmd("normal! <Esc>")
 end
 
+-- run a named style from opts.styles
 function M.run_style(name)
 	local style = (M.opts.styles or {})[name]
 	if not style then
