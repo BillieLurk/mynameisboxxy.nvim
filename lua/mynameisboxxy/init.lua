@@ -85,7 +85,6 @@ function M.run_range(s, e, override)
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
 end
 
--- :BoxxyBorder [style]
 local function define_user_command()
 	if vim.g._boxxy_cmd_defined then
 		return
