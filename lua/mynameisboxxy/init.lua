@@ -11,10 +11,10 @@ M.opts = {
 }
 
 -- find display width of the widest line (handles tabs, wide chars)
-local function longest_line(lines)
+local function longest_line(lines, startcol)
 	local m = 0
 	for _, line in ipairs(lines) do
-		local w = vim.fn.strdisplaywidth(line)
+		local w = vim.fn.strdisplaywidth(line, startcol or 0)
 		if w > m then
 			m = w
 		end
@@ -27,12 +27,16 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 	local px = padding and padding[1] or 0
 	local py = padding and padding[2] or 0
 
-	-- allow single "corner" char shorthand
 	if tl and (not tr and not bl and not br) then
 		tr, bl, br = tl, tl, tl
 	end
 
-	local max_len = longest_line(lines)
+	-- start column after the left border + left padding
+	local startcol = 1 + px
+
+	-- compute widths with the correct starting column to account for tabs
+	local max_len = longest_line(lines, startcol)
+
 	local b_width = max_len + px * 2 + 2
 	local inner_w = b_width - 2
 
@@ -47,7 +51,8 @@ local function add_border_custom(lines, tl, tr, bl, br, h, v, padding)
 	end
 
 	for _, line in ipairs(lines) do
-		local line_w = vim.fn.strdisplaywidth(line)
+		-- width from the same start column so tab expansion matches actual layout
+		local line_w = vim.fn.strdisplaywidth(line, startcol)
 		local right_pad = px + (max_len - line_w)
 		out[#out + 1] = table.concat({
 			(v or "|"),
