@@ -136,9 +136,6 @@ function M.run(override)
 
 	-- replace selection
 	vim.api.nvim_buf_set_lines(0, s - 1, e, false, bordered)
-
-	-- leave visual mode
-	vim.cmd("normal! <Esc>")
 end
 
 -- run a named style from opts.styles
